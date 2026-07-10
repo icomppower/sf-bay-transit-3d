@@ -1,0 +1,4 @@
+gtfs-bart/
+gtfs-caltrain/
+*.zip
+.DS_Store

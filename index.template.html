@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SF Bay Area 3D — 舊金山灣區立體交通路網</title>
+<meta name="description" content="Interactive 3D map of BART + Caltrain in a single HTML file (Three.js, no build). Real GTFS route geometry, 81 stations, animated trains.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23ff0000'/></svg>">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #04060d; }
+  body { font-family: "Helvetica Neue", Helvetica, "PingFang TC", Arial, sans-serif; color: #e8ecf4; }
+  canvas { display: block; }
+
+  #hud { position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; }
+  #hud > * { pointer-events: auto; }
+
+  #panel {
+    position: absolute; top: 18px; left: 18px; max-width: 320px;
+    background: rgba(7, 11, 22, 0.78); border: 1px solid rgba(120, 150, 220, 0.18);
+    border-radius: 12px; padding: 14px 16px; backdrop-filter: blur(10px);
+  }
+  #panel h1 { font-size: 19px; font-weight: 800; letter-spacing: 1.5px; }
+  #panel h1 span { color: #f6bc26; }
+  #panel .sub { font-size: 12px; color: #9fb0d0; margin-top: 3px; letter-spacing: 2px; }
+  #stats { font-size: 11px; color: #7487ab; margin-top: 8px; line-height: 1.5; }
+  #stats b { color: #cdd9f2; font-weight: 600; }
+
+  #legend { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; max-width: 300px; }
+  .chip {
+    width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 800; color: #fff; cursor: pointer; user-select: none;
+    border: 2px solid transparent; transition: transform .12s, opacity .12s;
+  }
+  .chip:hover { transform: scale(1.18); }
+  .chip.off { opacity: 0.22; filter: grayscale(0.8); }
+  .lgbtns { margin-top: 8px; display: flex; gap: 8px; }
+  .lgbtns button, #controls button {
+    background: rgba(120, 150, 220, 0.12); color: #aebdde; border: 1px solid rgba(120, 150, 220, 0.25);
+    border-radius: 6px; font-size: 11px; padding: 3px 10px; cursor: pointer;
+  }
+  .lgbtns button:hover, #controls button:hover { background: rgba(120, 150, 220, 0.25); color: #fff; }
+  #controls button.on { background: rgba(246, 188, 38, 0.2); border-color: rgba(246, 188, 38, 0.5); color: #f6bc26; }
+
+  #controls { margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11px; color: #7487ab; }
+  #speed { width: 90px; accent-color: #f6bc26; }
+
+  #hint {
+    position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+    font-size: 11px; color: #61719280; letter-spacing: 0.5px; text-align: center; white-space: nowrap;
+  }
+  #tooltip {
+    position: absolute; display: none; padding: 7px 11px; border-radius: 8px;
+    background: rgba(8, 12, 24, 0.92); border: 1px solid rgba(140, 170, 240, 0.3);
+    font-size: 12px; pointer-events: none; z-index: 10; transform: translate(-50%, -130%); white-space: nowrap;
+  }
+  #tooltip .tn { font-weight: 700; margin-bottom: 3px; }
+  #tooltip .tr { display: flex; gap: 3px; }
+  #tooltip .tb { width: 15px; height: 15px; border-radius: 50%; font-size: 9px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center; color: #fff; }
+  #tooltip .ts { font-size: 10px; color: #8b9bc0; margin-top: 3px; }
+
+  @media (max-width: 640px) {
+    #panel { max-width: 250px; padding: 10px 12px; }
+    #panel h1 { font-size: 15px; }
+    .chip { width: 22px; height: 22px; font-size: 10px; }
+    #hint { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="hud">
+  <div id="panel">
+    <h1>SF BAY AREA <span>3D</span></h1>
+    <div class="sub">舊金山灣區立體交通路網 · BART + Caltrain</div>
+    <div id="stats"></div>
+    <div id="legend"></div>
+    <div class="lgbtns">
+      <button id="btnAll">All 全部</button>
+      <button id="btnNone">None 清空</button>
+    </div>
+    <div id="controls">
+      <span>Time-lapse 倍速</span>
+      <input id="speed" type="range" min="0" max="300" value="80">
+      <span id="speedVal">×80</span>
+      <button id="btnSpin" class="on">Auto-rotate</button>
+    </div>
+  </div>
+  <div id="hint">drag 旋轉 · scroll 縮放 · right-drag 平移 · hover station 站名 · 深度：地下 ↓ / 高架 ↑</div>
+  <div id="tooltip"></div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const DATA = /*__DATA__*/ null;
+
+// ---------- scene ----------
+const EX = 0.02; // vertical exaggeration: render-units per metre of elevation
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x04060d);
+scene.fog = new THREE.Fog(0x04060d, 90, 260);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.05, 800);
+camera.position.set(14, 46, 62);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(4, 0, -2);   // roughly the BART network's centroid — Caltrain trails far south of it, same as the real system
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.maxPolarAngle = Math.PI * 0.49;
+controls.minDistance = 1.5;
+controls.maxDistance = 220;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.5;
+controls.addEventListener('start', () => { controls.autoRotate = false; btnSpin.classList.remove('on'); });
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.85, 0.5, 0.1);
+composer.addPass(bloom);
+
+// ---------- water base + boroughs ----------
+const water = new THREE.Mesh(
+  new THREE.CircleGeometry(230, 48),
+  new THREE.MeshBasicMaterial({ color: 0x081020 })
+);
+water.rotation.x = -Math.PI / 2;
+water.position.y = -0.62;
+water.renderOrder = 0;
+scene.add(water);
+
+const boroMat = new THREE.MeshBasicMaterial({ color: 0x101a2e, depthWrite: false, side: THREE.DoubleSide });
+const boroEdge = new THREE.LineBasicMaterial({ color: 0x2a3c66, transparent: true, opacity: 0.9 });
+for (const ring of DATA.boroughs) {
+  const shape = new THREE.Shape(ring.map(([x, z]) => new THREE.Vector2(x, -z)));
+  const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), boroMat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.renderOrder = 1;
+  scene.add(mesh);
+  const pts = ring.map(([x, z]) => new THREE.Vector3(x, 0.004, z));
+  pts.push(pts[0].clone());
+  const edge = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), boroEdge);
+  edge.renderOrder = 1;
+  scene.add(edge);
+}
+
+// ---------- routes as glowing tubes ----------
+const routeGroup = {};   // id -> { objs: [], curves: [{curve, len}], color }
+const allCurves = [];    // { curve, len, routeId, color }
+DATA.routes.forEach((route, ri) => {
+  const color = new THREE.Color(route.color).multiplyScalar(1.25);
+  const g = { objs: [], curves: [], color: route.color, visible: true };
+  routeGroup[route.id] = g;
+  const yOff = (ri % 7) * 0.011; // separate routes sharing the same trunk tracks
+  for (const shp of route.shapes) {
+    if (shp.length < 2) continue;
+    const pts = shp.map(([x, y, z]) => new THREE.Vector3(x, y * EX + yOff, z));
+    const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal', 0.5);
+    const len = curve.getLength();
+    const tube = new THREE.Mesh(
+      new THREE.TubeGeometry(curve, Math.min(Math.max(shp.length * 3, 32), 720), 0.026, 6, false),
+      new THREE.MeshBasicMaterial({ color, toneMapped: false })
+    );
+    tube.renderOrder = 2;
+    scene.add(tube);
+    g.objs.push(tube);
+    g.curves.push({ curve, len });
+    allCurves.push({ curve, len, routeId: route.id, color: route.color });
+  }
+});
+
+// ---------- stations ----------
+const stGeo = new THREE.SphereGeometry(1, 10, 8);
+const stMat = new THREE.MeshBasicMaterial({ color: 0xdfe8ff });
+const stMesh = new THREE.InstancedMesh(stGeo, stMat, DATA.stations.length);
+stMesh.renderOrder = 3;
+const m4 = new THREE.Matrix4();
+DATA.stations.forEach((s, i) => {
+  const hub = s.r.length >= 4;
+  const sc = hub ? 0.075 : (s.r.length >= 2 ? 0.052 : 0.038);
+  m4.makeScale(sc, sc, sc).setPosition(s.x, s.y * EX, s.z);
+  stMesh.setMatrixAt(i, m4);
+});
+scene.add(stMesh);
+
+// hub labels
+const HUBS = ['Embarcadero', 'Montgomery Street', 'Powell Street', 'Civic Center / UN Plaza',
+  '12th Street / Oakland City Center', 'MacArthur', 'West Oakland', 'Millbrae',
+  'San Francisco Caltrain Station', 'San Jose Diridon', 'Richmond', 'Dublin / Pleasanton',
+  'Antioch', 'Berryessa / North San Jose', 'Coliseum', 'Daly City'];
+function makeLabel(text) {
+  const c = document.createElement('canvas');
+  const ctx = c.getContext('2d');
+  ctx.font = '600 26px Helvetica';
+  const w = ctx.measureText(text).width;
+  c.width = w + 24; c.height = 44;
+  const ctx2 = c.getContext('2d');
+  ctx2.font = '600 26px Helvetica';
+  ctx2.fillStyle = 'rgba(6,10,20,0.55)';
+  ctx2.beginPath(); ctx2.roundRect(0, 0, c.width, c.height, 10); ctx2.fill();
+  ctx2.fillStyle = '#cfe0ff';
+  ctx2.fillText(text, 12, 31);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, opacity: 0.85, sizeAttenuation: false }));
+  sp.scale.set(c.width / 2200, c.height / 2200, 1); // constant screen size
+  sp.renderOrder = 6;
+  return sp;
+}
+const seen = new Set();
+for (const s of DATA.stations) {
+  if (HUBS.includes(s.n) && !seen.has(s.n)) {
+    seen.add(s.n);
+    const sp = makeLabel(s.n);
+    sp.position.set(s.x, s.y * EX + 0.55, s.z);
+    scene.add(sp);
+  }
+}
+
+// ---------- trains ----------
+const trains = [];
+for (const c of allCurves) {
+  const n = Math.max(1, Math.round(c.len / 2.0)); // one train ≈ every 2 km per direction
+  for (let d = 0; d < 2; d++) for (let i = 0; i < n; i++) {
+    trains.push({ c, t: (i + d * 0.5) / n, dir: d ? 1 : -1 });
+  }
+}
+const trGeo = new THREE.BoxGeometry(0.055, 0.045, 0.16);
+const trMesh = new THREE.InstancedMesh(trGeo, new THREE.MeshBasicMaterial({ toneMapped: false }), trains.length);
+trMesh.renderOrder = 4;
+const cWhite = new THREE.Color(2, 2, 2);
+trains.forEach((tr, i) => {
+  trMesh.setColorAt(i, new THREE.Color(tr.c.color).multiplyScalar(1.9));
+});
+scene.add(trMesh);
+const _p = new THREE.Vector3(), _tan = new THREE.Vector3(), _q = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0), _s = new THREE.Vector3(1, 1, 1), _zero = new THREE.Vector3(0, 0, 0);
+const _m = new THREE.Matrix4();
+
+// ---------- UI ----------
+const legend = document.getElementById('legend');
+const ORDER = ['RED', 'ORG', 'YEL', 'GRN', 'BLU', 'GRY', 'CT'];
+const LBL = { RED: 'R', ORG: 'O', YEL: 'Y', GRN: 'G', BLU: 'B', GRY: 'OAK', CT: 'CT' };
+const sorted = [...DATA.routes].sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
+for (const r of sorted) {
+  const chip = document.createElement('div');
+  chip.className = 'chip';
+  chip.style.background = r.color;
+  chip.textContent = LBL[r.id] || r.id;
+  chip.title = r.name;
+  if (r.id === 'GRY' || r.id === 'CT') { chip.style.borderRadius = '6px'; chip.style.fontSize = '9px'; }
+  if (r.id === 'YEL' || r.id === 'GRY') chip.style.color = '#222';   // light backgrounds need dark text
+  chip.onclick = () => setRoute(r.id, !routeGroup[r.id].visible);
+  legend.appendChild(chip);
+  routeGroup[r.id].chip = chip;
+}
+function setRoute(id, vis) {
+  const g = routeGroup[id];
+  g.visible = vis;
+  g.objs.forEach(o => o.visible = vis);
+  g.chip.classList.toggle('off', !vis);
+}
+document.getElementById('btnAll').onclick = () => Object.keys(routeGroup).forEach(id => setRoute(id, true));
+document.getElementById('btnNone').onclick = () => Object.keys(routeGroup).forEach(id => setRoute(id, false));
+
+let speedMult = 80;
+const speedEl = document.getElementById('speed'), speedVal = document.getElementById('speedVal');
+speedEl.oninput = () => { speedMult = +speedEl.value; speedVal.textContent = '×' + speedMult; };
+const btnSpin = document.getElementById('btnSpin');
+btnSpin.onclick = () => { controls.autoRotate = !controls.autoRotate; btnSpin.classList.toggle('on', controls.autoRotate); };
+
+document.getElementById('stats').innerHTML =
+  `<b>${DATA.routes.length}</b> lines 路線 · <b>${DATA.stations.length}</b> stations 車站 · <b>${trains.length}</b> trains 列車<br>` +
+  `真實 BART + Caltrain GTFS 路線幾何 · 地下深度為近似估算`;
+
+// ---------- tooltip / raycast ----------
+const ray = new THREE.Raycaster();
+ray.params.Mesh = { threshold: 0 };
+const mouse = new THREE.Vector2();
+const tooltip = document.getElementById('tooltip');
+const colorOf = {};
+DATA.routes.forEach(r => colorOf[r.id] = r.color);
+let lastRay = 0;
+addEventListener('pointermove', (e) => {
+  const now = performance.now();
+  if (now - lastRay < 60) return;
+  lastRay = now;
+  mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  const hit = ray.intersectObject(stMesh)[0];
+  if (hit && hit.instanceId != null) {
+    const s = DATA.stations[hit.instanceId];
+    const depth = s.y < 0 ? `underground 地下 ${-s.y} m` : s.y > 0 ? `elevated 高架 +${s.y} m` : 'at grade 地面';
+    tooltip.innerHTML = `<div class="tn">${s.n}</div>` +
+      `<div class="tr">${s.r.map(r => `<div class="tb" style="background:${colorOf[r] || '#555'}">${LBL[r] || r}</div>`).join('')}</div>` +
+      `<div class="ts">${depth}</div>`;
+    tooltip.style.display = 'block';
+    tooltip.style.left = e.clientX + 'px';
+    tooltip.style.top = e.clientY + 'px';
+    document.body.style.cursor = 'pointer';
+  } else {
+    tooltip.style.display = 'none';
+    document.body.style.cursor = '';
+  }
+});
+
+// ---------- loop ----------
+const REAL_SPEED = 0.013; // km/s ≈ 47 km/h average BART/Caltrain speed (higher than a subway — longer interstations)
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.1);
+  for (let i = 0; i < trains.length; i++) {
+    const tr = trains[i];
+    if (!routeGroup[tr.c.routeId].visible) {
+      _m.compose(_zero, _q, _s.set(0, 0, 0));
+      trMesh.setMatrixAt(i, _m);
+      continue;
+    }
+    tr.t += tr.dir * (REAL_SPEED * speedMult * dt) / tr.c.len;
+    if (tr.t > 1) { tr.t = 1; tr.dir = -1; }
+    if (tr.t < 0) { tr.t = 0; tr.dir = 1; }
+    tr.c.curve.getPointAt(tr.t, _p);
+    tr.c.curve.getTangentAt(tr.t, _tan);
+    _q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), _tan);
+    _m.compose(_p, _q, _s.set(1, 1, 1));
+    trMesh.setMatrixAt(i, _m);
+  }
+  trMesh.instanceMatrix.needsUpdate = true;
+  controls.update();
+  composer.render();
+}
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
