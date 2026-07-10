@@ -1,0 +1,176 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "battle.schema.json",
+  "title": "Battle 3D — battle data contract",
+  "description": "Declarative structural contract for window.BATTLE_DATA (data.js). The RUNTIME AUTHORITY is validate.js, which also checks cross-references JSON Schema cannot express (e.g. unit.faction / arrow.f must be a declared faction key; hotspot.kind must be a built-in OR a meta.fx key; a faction key may not be the reserved word 'both'). This schema is the declarative STRUCTURAL mirror, kept in agreement with validate.js by the conformance test. Validate with: node tools/validate.mjs (it runs both).",
+  "type": "object",
+  "required": ["meta", "factions", "intro", "outro", "storyboard", "units", "arrows", "geography", "notes", "flagLegend"],
+  "properties": {
+    "meta": { "$ref": "#/$defs/meta" },
+    "factions": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-zA-Z_][\\w-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/faction" }
+    },
+    "intro": { "type": "object", "required": ["cam"], "properties": { "cam": { "$ref": "#/$defs/camIntro" } } },
+    "outro": { "type": "object", "required": ["cam"], "properties": { "cam": { "$ref": "#/$defs/camOutro" } } },
+    "storyboard": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/shot" } },
+    "units": { "type": "array", "items": { "$ref": "#/$defs/unit" } },
+    "arrows": { "type": "array", "items": { "$ref": "#/$defs/arrow" } },
+    "geography": { "$ref": "#/$defs/geography" },
+    "fronts": { "type": "array", "items": { "$ref": "#/$defs/front" } },
+    "weather": { "type": "array", "items": { "$ref": "#/$defs/weather" } },
+    "hotspots": { "type": "array", "items": { "$ref": "#/$defs/hotspot" } },
+    "notes": { "$ref": "#/$defs/notes" },
+    "flagLegend": { "type": "array" }
+  },
+  "$defs": {
+    "lngLat": { "type": "array", "minItems": 2, "items": { "type": "number" } },
+    "polyline": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/lngLat" } },
+    "geo": {
+      "type": "object",
+      "required": ["minLng", "maxLng", "minLat", "maxLat", "Z"],
+      "properties": {
+        "minLng": { "type": "number" }, "maxLng": { "type": "number" },
+        "minLat": { "type": "number" }, "maxLat": { "type": "number" }, "Z": { "type": "number" }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "required": ["geo", "dayMin", "dayMax", "year", "month", "lastDay", "title", "subtitle"],
+      "properties": {
+        "geo": { "$ref": "#/$defs/geo" },
+        "dayMin": { "type": "number" }, "dayMax": { "type": "number" },
+        "year": { "type": "number" }, "month": { "type": "number" }, "lastDay": { "type": "number" },
+        "title": { "type": "string", "minLength": 1 }, "subtitle": { "type": "string", "minLength": 1 },
+        "dir": { "enum": ["ltr", "rtl"] },
+        "vexag": { "type": "number" },
+        "fonts": { "type": "object" },
+        "theme": { "type": "object" },
+        "fx": { "type": "object" }
+      }
+    },
+    "faction": {
+      "type": "object",
+      "required": ["css", "role", "name_zh", "name_en", "glow", "dim", "maxStrength"],
+      "properties": {
+        "css": { "type": "string", "minLength": 1 },
+        "role": { "type": "string", "minLength": 1 },
+        "name_zh": { "type": "string", "minLength": 1 },
+        "name_en": { "type": "string", "minLength": 1 },
+        "glow": { "type": "number" }, "dim": { "type": "number" }, "maxStrength": { "type": "number" }
+      }
+    },
+    "camIntro": {
+      "type": "object",
+      "required": ["lng", "lat", "dist", "az", "el"],
+      "properties": { "lng": { "type": "number" }, "lat": { "type": "number" }, "dist": { "type": "number" }, "az": { "type": "number" }, "el": { "type": "number" } }
+    },
+    "camShot": {
+      "type": "object",
+      "required": ["lng", "lat", "dist", "az", "el", "orbit"],
+      "properties": { "lng": { "type": "number" }, "lat": { "type": "number" }, "dist": { "type": "number" }, "az": { "type": "number" }, "el": { "type": "number" }, "orbit": { "type": "number" } }
+    },
+    "camOutro": {
+      "type": "object",
+      "required": ["lng", "lat", "dist", "az", "el", "orbit", "tween"],
+      "properties": { "lng": { "type": "number" }, "lat": { "type": "number" }, "dist": { "type": "number" }, "az": { "type": "number" }, "el": { "type": "number" }, "orbit": { "type": "number" }, "tween": { "type": "number" } }
+    },
+    "shot": {
+      "type": "object",
+      "required": ["day", "hold", "cam", "title_zh", "title_en", "dateLabel"],
+      "properties": {
+        "day": { "type": "number" }, "hold": { "type": "number" },
+        "cam": { "$ref": "#/$defs/camShot" },
+        "title_zh": { "type": "string", "minLength": 1 },
+        "title_en": { "type": "string", "minLength": 1 },
+        "dateLabel": { "type": "string", "minLength": 1 },
+        "narration_zh": { "type": "string" }, "narration_en": { "type": "string" },
+        "side": { "type": "string" }, "focus": { "type": "array" }, "commanders": { "type": "array" }
+      }
+    },
+    "trackKf": {
+      "type": "object",
+      "required": ["d", "lng", "lat", "s", "st"],
+      "properties": {
+        "d": { "type": "number" }, "lng": { "type": "number" }, "lat": { "type": "number" }, "s": { "type": "number" },
+        "st": { "enum": ["march", "hold", "attack", "retreat", "landing", "dead"] }
+      }
+    },
+    "unit": {
+      "type": "object",
+      "required": ["id", "faction", "name_zh", "flag", "track"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "faction": { "type": "string", "minLength": 1 },
+        "name_zh": { "type": "string", "minLength": 1 },
+        "flag": { "type": "string", "minLength": 1 },
+        "track": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/trackKf" } }
+      }
+    },
+    "arrow": {
+      "type": "object",
+      "required": ["f", "from", "to", "d", "kind", "label"],
+      "properties": {
+        "f": { "type": "string", "minLength": 1 },
+        "from": { "$ref": "#/$defs/lngLat" }, "to": { "$ref": "#/$defs/lngLat" },
+        "d": { "type": "number" },
+        "kind": { "type": "string", "minLength": 1 }, "label": { "type": "string", "minLength": 1 }
+      }
+    },
+    "place": {
+      "type": "object",
+      "required": ["lng", "lat", "name_zh", "name_en"],
+      "properties": {
+        "lng": { "type": "number" }, "lat": { "type": "number" },
+        "name_zh": { "type": "string", "minLength": 1 }, "name_en": { "type": "string", "minLength": 1 }
+      }
+    },
+    "line": {
+      "type": "object",
+      "required": ["path", "name_zh", "name_en", "color"],
+      "properties": {
+        "path": { "$ref": "#/$defs/polyline" },
+        "name_zh": { "type": "string", "minLength": 1 }, "name_en": { "type": "string", "minLength": 1 },
+        "color": { "type": "string", "minLength": 1 }
+      }
+    },
+    "geography": {
+      "type": "object",
+      "properties": {
+        "regions": { "type": "array", "items": { "$ref": "#/$defs/place" } },
+        "points": { "type": "array", "items": { "$ref": "#/$defs/place" } },
+        "lines": { "type": "array", "items": { "$ref": "#/$defs/line" } }
+      }
+    },
+    "front": {
+      "type": "object",
+      "required": ["d", "path"],
+      "properties": { "d": { "type": "number" }, "path": { "$ref": "#/$defs/polyline" } }
+    },
+    "weather": {
+      "type": "object",
+      "required": ["d", "night", "fog", "rain", "smoke"],
+      "properties": { "d": { "type": "number" }, "night": { "type": "number" }, "fog": { "type": "number" }, "rain": { "type": "number" }, "smoke": { "type": "number" } }
+    },
+    "hotspot": {
+      "type": "object",
+      "required": ["a", "b", "i", "lng", "lat", "kind"],
+      "properties": {
+        "a": { "type": "number" }, "b": { "type": "number" }, "i": { "type": "number" },
+        "lng": { "type": "number" }, "lat": { "type": "number" },
+        "kind": { "type": "string", "minLength": 1 }
+      }
+    },
+    "notes": {
+      "type": "object",
+      "required": ["summary", "caveats", "sources"],
+      "properties": {
+        "summary": { "type": "string", "minLength": 1 },
+        "caveats": { "type": "array" },
+        "sources": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

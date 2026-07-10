@@ -1,4 +1,13 @@
+# Terrain + imagery tiles ARE committed: GitHub Pages is static (no backend),
+# so lib/tiles/ must ship with the repo.
+
+# Raw GTFS source data (regenerate via tools/gen-terrain-data.mjs — see README)
 gtfs-bart/
 gtfs-caltrain/
 *.zip
+tools/terrain-data.json
+
+# OS / editor cruft
 .DS_Store
+Thumbs.db
+*.log
