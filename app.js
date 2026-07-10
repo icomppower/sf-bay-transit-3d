@@ -15,8 +15,8 @@ import { Clock, Time, unitById } from "./state.js";
 import { scene, camera, renderer, labelRenderer, controls } from "./core.js";
 import { loadTiles, buildTerrain, buildLabels, buildLine, updateLines, updateFront,
          updateLabels, placeLabels, lineObjs, frontLabel } from "./terrain.js";
-import { buildUnit, buildArrow, buildRain, buildLiveTrains, updateUnits, updateArrows, updateFlags,
-         updateEffects, updateLiveTrains, showStationPopup, applyWeather, stepRain, unitObjs, arrowObjs } from "./entities.js";
+import { buildUnit, buildArrow, buildRain, buildLiveTrains, buildAmbientTrains, updateUnits, updateArrows, updateFlags,
+         updateEffects, updateLiveTrains, updateAmbientTrains, showStationPopup, applyWeather, stepRain, unitObjs, arrowObjs } from "./entities.js";
 import { Director, wireUI, buildChrome, updatePlayBtn } from "./director.js";
 
 /* ===================== ANIMATION LOOP ============================= */
@@ -50,7 +50,7 @@ function frame(dt){
   Director.update(dt);                  // drives camera + clock + captions + focus
   const w=applyWeather(Clock.day);
   updateFront(Clock.day); updateLines(Clock.day); updateUnits(Clock.day); updateArrows(Clock.day);
-  updateLiveTrains(); updateFlags(); updateEffects(Clock.day,dt); stepRain(dt,w); updateLabels();
+  updateLiveTrains(); updateAmbientTrains(); updateFlags(); updateEffects(Clock.day,dt); stepRain(dt,w); updateLabels();
   renderScene();
 }
 let captureFrozen=false;   // capture mode (?capture=1) holds the loop on a settled frame so a headless tool can seek + composite deterministically
@@ -183,7 +183,7 @@ function injectBattleStyles(){
     renderer.domElement.setAttribute("role","img");
     renderer.domElement.setAttribute("aria-label", D.meta.title+" · "+D.meta.subtitle+" — interactive 3D battle map");
     await loadTiles();
-    buildTerrain(); buildLabels(showStationPopup); buildLine(); buildLiveTrains(); buildRain();
+    buildTerrain(); buildLabels(showStationPopup); buildLine(); buildLiveTrains(); buildAmbientTrains(); buildRain();
     D.units.forEach(buildUnit); D.arrows.forEach(buildArrow);
     unitObjs.forEach(o=>{ unitById[o.u.id]=o; });
     const kickMusic = wireUI(); applyWeather(D.storyboard[0].day);   // wireUI returns syncMusic → starts the muted, in-sync soundtrack timeline once the tour begins

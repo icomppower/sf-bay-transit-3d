@@ -186,6 +186,35 @@ export function updateLiveTrains(){
   }
 }
 
+/* ---- ambient trains: a couple of always-moving tokens per line, same technique as hk-mtr-3d's
+ *  live-trains layer, so the map always shows motion — including genuinely outside BART/Caltrain's
+ *  real operating hours (roughly 1am–5am Pacific), when the schedule-accurate layer above correctly
+ *  shows none running. Decorative, not schedule-accurate; the click popup's departure times still
+ *  come from the real schedule. Layered on top of (not replacing) the real ones. ---- */
+const AMBIENT_SPEED=22, AMBIENT_PER_LINE=2;
+export const ambientTrains=[];
+export function buildAmbientTrains(){
+  for(const L of lineObjs){
+    const period=Math.max(L.curve.getLength()/AMBIENT_SPEED, 8);
+    for(let i=0;i<AMBIENT_PER_LINE;i++){
+      const mesh=new THREE.Mesh(new THREE.BoxGeometry(14,6,5),
+        new THREE.MeshStandardMaterial({color:L.color, emissive:L.color, emissiveIntensity:0.25, roughness:0.6}));
+      mesh.castShadow=true; scene.add(mesh);
+      ambientTrains.push({ L, mesh, period, phase:(i/AMBIENT_PER_LINE)*period*2 });
+    }
+  }
+}
+export function updateAmbientTrains(){
+  for(const T of ambientTrains){
+    if(!T.L.mesh.visible){ T.mesh.visible=false; continue; }   // hidden if its line's legend chip is toggled off
+    T.mesh.visible=true;
+    const tt=((Time.now+T.phase)%(T.period*2))/T.period, u=clamp(tt<1?tt:2-tt,0,1);   // 0..2 triangle wave → back-and-forth shuttle
+    const tan=T.L.curve.getTangentAt(u).normalize(); if(tt>1) tan.negate();
+    T.mesh.position.copy(T.L.curve.getPointAt(u)); T.mesh.position.y+=3;
+    T.mesh.quaternion.setFromUnitVectors(AXIS_X,tan);
+  }
+}
+
 /* ---- click-a-station popup: next real departures, from the same schedule ---- */
 const popup=document.createElement("div"); popup.id="stopop";
 Object.assign(popup.style,{position:"fixed",display:"none",zIndex:20,padding:"10px 14px",borderRadius:"10px",
