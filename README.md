@@ -1,6 +1,6 @@
 # SF Bay Area 3D — 舊金山灣區立體交通路網
 
-Interactive 3D map of BART + Caltrain in a single HTML file (Three.js, no build). Real GTFS route geometry, 81 stations with approximate underground/elevated depth, and animated trains.
+Interactive 3D map of BART + Caltrain in a single HTML file (Three.js, no build). Real GTFS route geometry, 81 stations with approximate underground/elevated depth, and trains positioned by the **real published weekday timetable** — not a decorative loop.
 
 **Live:** https://icomppower.github.io/sf-bay-transit-3d
 
@@ -14,6 +14,10 @@ Third entry in the 3D Transit Maps series, sister to [HK MTR 3D](https://icomppo
 - Station → line membership derived from `stop_times.txt` + `trips.txt`, not guessed.
 
 Rebuild: `node process-sf.mjs` (needs `gtfs-bart/` and `gtfs-caltrain/`, gitignored — re-download with the URLs above), then `node inject.mjs` to produce `index.html` from `index.template.html`.
+
+## Schedule-accurate trains
+
+Unlike HK MTR 3D / NYC Subway 3D (whose trains are a decorative even-spaced loop, not tied to any real timetable), this build extracts the real weekday schedule from `stop_times.txt` for one representative service day (BART's core Mon–Fri calendar, Caltrain's `service_id 72982`) — 767 real trips, 16k+ real stop times. Each stop's real (lat, lon) is projected onto the nearest matching output route curve to get its position `u ∈ [0,1]` along the track; a trip's train then moves by linearly interpolating `u` between its two bracketing real stop times as a virtual clock advances (the existing "Time-lapse" speed slider now controls how fast that virtual clock runs, ×80 default ≈ a full day every ~30s). A train only exists between its trip's first and last real stop time, so the number of visible trains rises and falls with actual rush-hour service (~30 midday → ~60+ at peak → 0 overnight) — same glowing box visual as before, just positioned by the real timetable instead of a loop.
 
 ## Known simplification: elevation
 

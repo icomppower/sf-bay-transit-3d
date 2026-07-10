@@ -69,6 +69,7 @@ function smoothElev(elev) {
 function loadFeed(dir, opts) {
   const stopsRaw = readCsv(`${dir}/stops.txt`);
   const stations = stopsRaw.filter(s => s.location_type === '1');
+  const stopById = {}; for (const s of stopsRaw) stopById[s.stop_id] = s;
   const platformParent = {};   // stop_id (platform) -> parent_station id
   for (const s of stopsRaw) if (s.parent_station) platformParent[s.stop_id] = s.parent_station;
 
@@ -85,14 +86,15 @@ function loadFeed(dir, opts) {
   const tripRoute = {};
   for (const t of trips) tripRoute[t.trip_id] = opts.mergeRoute ? opts.mergeRoute(t.route_id) : t.route_id;
   const stationRoutes = {};   // parent_station id -> Set(mergedRouteId)
-  for (const st of readCsv(`${dir}/stop_times.txt`)) {
+  const stopTimesRaw = readCsv(`${dir}/stop_times.txt`);
+  for (const st of stopTimesRaw) {
     const parent = platformParent[st.stop_id] || st.stop_id;
     const r = tripRoute[st.trip_id];
     if (!r) continue;
     (stationRoutes[parent] ||= new Set()).add(r);
   }
 
-  return { stations, routesRaw, shapeRoute, shapes, stationRoutes };
+  return { stations, routesRaw, shapeRoute, shapes, stationRoutes, stopById, trips, tripRoute, stopTimesRaw };
 }
 
 const BART_MERGE = { '1': 'YEL', '2': 'YEL', '3': 'ORG', '4': 'ORG', '5': 'GRN', '6': 'GRN', '7': 'RED', '8': 'RED', '11': 'BLU', '12': 'BLU', '19': 'GRY', '20': 'GRY' };
@@ -125,21 +127,91 @@ function buildRoutes(feed, colorOf, nameOf, ids, isBart) {
       }
       if (picked.length >= 3) break;
     }
+    const branchesLL = [];   // parallel lat/lon polylines (pre-projection) — kept for schedule stop-to-curve projection
     const outShapes = picked.map(sid => {
       const raw = feed.shapes[sid].map(p => [p[1], p[2]]);
       const simp = simplify(raw, 0.00006);
+      branchesLL.push(simp);
       const elev = smoothElev(simp.map(([lat, lon]) => elevFor(lat, lon, isBart)));
       return simp.map(([lat, lon], i) => { const [x, z] = proj(lat, lon); return [+x.toFixed(3), +elev[i].toFixed(1), +z.toFixed(3)]; });
     });
-    out.push({ id: rid, color: colorOf(rid), name: nameOf(rid), shapes: outShapes });
+    out.push({ id: rid, color: colorOf(rid), name: nameOf(rid), shapes: outShapes, branchesLL });
   }
   return out;
+}
+
+// ---- project a real (lat,lon) onto a lat/lon polyline; returns fractional arc-length position u ∈ [0,1] ----
+function projectToPolyline(poly, lat, lon) {
+  const lens = [0];
+  for (let i = 1; i < poly.length; i++) {
+    const dy = (poly[i][0] - poly[i - 1][0]) * KY, dx = (poly[i][1] - poly[i - 1][1]) * KX;
+    lens.push(lens[i - 1] + Math.hypot(dy, dx));
+  }
+  const total = lens[lens.length - 1] || 1;
+  let best = { u: 0, d2: Infinity };
+  for (let i = 0; i < poly.length - 1; i++) {
+    const [ay, ax] = poly[i], [by, bx] = poly[i + 1];
+    const dy = by - ay, dx = bx - ax, len2 = dy * dy + dx * dx || 1e-12;
+    const t = Math.max(0, Math.min(1, ((lat - ay) * dy + (lon - ax) * dx) / len2));
+    const py = ay + t * dy, px = ax + t * dx;
+    const ddy = (lat - py) * KY, ddx = (lon - px) * KX;
+    const d2 = ddy * ddy + ddx * ddx;
+    if (d2 < best.d2) best = { u: (lens[i] + t * (lens[i + 1] - lens[i])) / total, d2 };
+  }
+  return best;
+}
+
+// ---- extract a schedule for a single representative weekday service_id: real GTFS stop_times, positioned
+//  by projecting each stop's real (lat,lon) onto whichever output branch curve it best matches ----
+function buildSchedule(feed, builtRoutes, serviceId) {
+  const byRoute = {}; for (const r of builtRoutes) byRoute[r.id] = r;
+  const tripIds = new Set(feed.trips.filter(t => t.service_id === serviceId).map(t => t.trip_id));
+  const byTrip = {};
+  for (const st of feed.stopTimesRaw) {
+    if (!tripIds.has(st.trip_id)) continue;
+    (byTrip[st.trip_id] ||= []).push(st);
+  }
+  const parseT = (s) => { const [h, m, sec] = s.split(':').map(Number); return h * 3600 + m * 60 + sec; };
+  const trips = [];
+  for (const tripId in byTrip) {
+    const rid = feed.tripRoute[tripId];
+    const route = byRoute[rid];
+    if (!route || !route.branchesLL.length) continue;
+    const sts = byTrip[tripId].sort((a, b) => (+a.stop_sequence) - (+b.stop_sequence));
+    if (sts.length < 2) continue;
+    const coords = sts.map(st => { const s = feed.stopById[st.stop_id]; return s ? [+s.stop_lat, +s.stop_lon] : null; }).filter(Boolean);
+    if (coords.length < 2) continue;
+    // pick whichever branch best fits this trip's stops (lowest average squared distance)
+    let bestBranch = 0, bestAvg = Infinity;
+    route.branchesLL.forEach((poly, bi) => {
+      const avg = coords.reduce((a, [lat, lon]) => a + projectToPolyline(poly, lat, lon).d2, 0) / coords.length;
+      if (avg < bestAvg) { bestAvg = avg; bestBranch = bi; }
+    });
+    const poly = route.branchesLL[bestBranch];
+    const stops = sts.map(st => {
+      const s = feed.stopById[st.stop_id]; if (!s) return null;
+      const u = projectToPolyline(poly, +s.stop_lat, +s.stop_lon).u;
+      return [+u.toFixed(4), parseT(st.arrival_time)];
+    }).filter(Boolean);
+    if (stops.length < 2) continue;
+    trips.push({ r: rid, b: bestBranch, s: stops });
+  }
+  return trips;
 }
 
 const BART_COLOR = { YEL: '#FFFF33', ORG: '#FF9933', GRN: '#339933', RED: '#FF0000', BLU: '#0099CC', GRY: '#B0BEC7' };
 const BART_NAME = { YEL: 'Yellow Line (Antioch ↔ SFO/Millbrae)', ORG: 'Orange Line (Berryessa ↔ Richmond)', GRN: 'Green Line (Berryessa ↔ Daly City)', RED: 'Red Line (Richmond ↔ SFO/Millbrae)', BLU: 'Blue Line (Dublin/Pleasanton ↔ Daly City)', GRY: 'Grey Line (Oakland Airport Connector)' };
 const bartRoutes = buildRoutes(bart, id => BART_COLOR[id], id => BART_NAME[id], Object.keys(BART_COLOR), true);
 const caltrainRoutes = buildRoutes(caltrain, () => '#CE202F', () => 'Caltrain (San Francisco ↔ Gilroy)', ['CT'], false);
+
+// ==================== real schedule (one representative weekday), for schedule-accurate train positions ====================
+// BART: "...-DX-MVS-Weekday-001" is the long-running (2026-01-12..2026-08-07) core weekday service.
+// Caltrain: service_id 72982 is the Mon-Fri calendar entry (see calendar.txt).
+const BART_WEEKDAY = bart.trips.find(t => /-DX-MVS-Weekday-001$/.test(t.service_id))?.service_id;
+const CT_WEEKDAY = '72982';
+const bartSchedule = buildSchedule(bart, bartRoutes, BART_WEEKDAY);
+const ctSchedule = buildSchedule(caltrain, caltrainRoutes, CT_WEEKDAY);
+const schedule = [...bartSchedule, ...ctSchedule];
 
 // ==================== stations out ====================
 function outStations(feed, prefix, isBart) {
@@ -151,9 +223,11 @@ function outStations(feed, prefix, isBart) {
 }
 const stations = [...outStations(bart, 'BART', true), ...outStations(caltrain, 'CT', false)];
 
-const data = { routes: [...bartRoutes, ...caltrainRoutes], stations, boroughs: [] };   // no bay/land outline yet — fast-follow, see README
+const routesOut = [...bartRoutes, ...caltrainRoutes].map(({ branchesLL, ...r }) => r);   // branchesLL was process-time-only
+const data = { routes: routesOut, stations, boroughs: [], schedule };   // no bay/land outline yet — fast-follow, see README
 fs.writeFileSync('data.json', JSON.stringify(data));
 const kb = (fs.statSync('data.json').size / 1024).toFixed(0);
 console.log(`routes: ${data.routes.length}, shapes: ${data.routes.reduce((a, r) => a + r.shapes.length, 0)}, pts: ${data.routes.reduce((a, r) => a + r.shapes.reduce((b, s) => b + s.length, 0), 0)}`);
 console.log(`stations: ${stations.length} (BART ${bart.stations.length}, Caltrain ${caltrain.stations.length}), data.json: ${kb} KB`);
+console.log(`schedule: ${schedule.length} trips (BART ${bartSchedule.length}, Caltrain ${ctSchedule.length}), ${schedule.reduce((a, t) => a + t.s.length, 0)} stop-events`);
 for (const r of data.routes) console.log(` ${r.id}: ${r.shapes.map(s => s.length).join('+')} pts ${r.color}`);

@@ -74,6 +74,8 @@
     <h1>SF BAY AREA <span>3D</span></h1>
     <div class="sub">舊金山灣區立體交通路網 · BART + Caltrain</div>
     <div id="stats"></div>
+    <div id="clock" style="font-size:11px;color:#aebdde;margin-top:2px;font-variant-numeric:tabular-nums;"></div>
+    <div id="statsExtra" style="font-size:11px;color:#f6bc26;margin-top:2px;"></div>
     <div id="legend"></div>
     <div class="lgbtns">
       <button id="btnAll">All 全部</button>
@@ -162,7 +164,6 @@ for (const ring of DATA.boroughs) {
 
 // ---------- routes as glowing tubes ----------
 const routeGroup = {};   // id -> { objs: [], curves: [{curve, len}], color }
-const allCurves = [];    // { curve, len, routeId, color }
 DATA.routes.forEach((route, ri) => {
   const color = new THREE.Color(route.color).multiplyScalar(1.25);
   const g = { objs: [], curves: [], color: route.color, visible: true };
@@ -181,7 +182,6 @@ DATA.routes.forEach((route, ri) => {
     scene.add(tube);
     g.objs.push(tube);
     g.curves.push({ curve, len });
-    allCurves.push({ curve, len, routeId: route.id, color: route.color });
   }
 });
 
@@ -233,24 +233,33 @@ for (const s of DATA.stations) {
   }
 }
 
-// ---------- trains ----------
-const trains = [];
-for (const c of allCurves) {
-  const n = Math.max(1, Math.round(c.len / 2.0)); // one train ≈ every 2 km per direction
-  for (let d = 0; d < 2; d++) for (let i = 0; i < n; i++) {
-    trains.push({ c, t: (i + d * 0.5) / n, dir: d ? 1 : -1 });
-  }
-}
+// ---------- trains: real GTFS schedule (one representative weekday), not a decorative loop ----------
+// Each DATA.schedule entry is one real trip: {r: routeId, b: branch index, s: [[u, secondsSinceMidnight], ...]}.
+// A virtual clock (vClock) drives which trips are currently "in service" — a train only exists between its
+// first and last real stop time, so the number of visible trains rises/falls with actual rush-hour service,
+// same as the real system. Still rendered as the same glowing instanced boxes as before.
+const trains = DATA.schedule.map(t => ({
+  curve: routeGroup[t.r].curves[t.b].curve,
+  color: routeGroup[t.r].color,
+  routeId: t.r,
+  stops: t.s,
+}));
+const DAY_SPAN = Math.max(...trains.map(t => t.stops[t.stops.length - 1][1])) + 1;   // covers trips running past midnight
+let vClock = 6.5 * 3600;   // start the simulated day at 6:30am — service is already running
 const trGeo = new THREE.BoxGeometry(0.055, 0.045, 0.16);
 const trMesh = new THREE.InstancedMesh(trGeo, new THREE.MeshBasicMaterial({ toneMapped: false }), trains.length);
 trMesh.renderOrder = 4;
-const cWhite = new THREE.Color(2, 2, 2);
-trains.forEach((tr, i) => {
-  trMesh.setColorAt(i, new THREE.Color(tr.c.color).multiplyScalar(1.9));
-});
+trains.forEach((tr, i) => trMesh.setColorAt(i, new THREE.Color(tr.color).multiplyScalar(1.9)));
 scene.add(trMesh);
-const _p = new THREE.Vector3(), _tan = new THREE.Vector3(), _q = new THREE.Quaternion(), _up = new THREE.Vector3(0, 1, 0), _s = new THREE.Vector3(1, 1, 1), _zero = new THREE.Vector3(0, 0, 0);
+const _p = new THREE.Vector3(), _tan = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(1, 1, 1), _zero = new THREE.Vector3(0, 0, 0);
 const _m = new THREE.Matrix4();
+// find the [i, i+1] stop pair bracketing time t in a sorted (by time) stops array; returns null if outside the trip's span
+function bracket(stops, t) {
+  if (t < stops[0][1] || t > stops[stops.length - 1][1]) return null;
+  let lo = 0, hi = stops.length - 1;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (stops[mid][1] <= t) lo = mid; else hi = mid; }
+  return [lo, hi];
+}
 
 // ---------- UI ----------
 const legend = document.getElementById('legend');
@@ -284,9 +293,10 @@ speedEl.oninput = () => { speedMult = +speedEl.value; speedVal.textContent = '×
 const btnSpin = document.getElementById('btnSpin');
 btnSpin.onclick = () => { controls.autoRotate = !controls.autoRotate; btnSpin.classList.toggle('on', controls.autoRotate); };
 
+const statsExtra = document.getElementById('statsExtra');
 document.getElementById('stats').innerHTML =
-  `<b>${DATA.routes.length}</b> lines 路線 · <b>${DATA.stations.length}</b> stations 車站 · <b>${trains.length}</b> trains 列車<br>` +
-  `真實 BART + Caltrain GTFS 路線幾何 · 地下深度為近似估算`;
+  `<b>${DATA.routes.length}</b> lines 路線 · <b>${DATA.stations.length}</b> stations 車站 · <b>${trains.length}</b> scheduled trips today 今日班次<br>` +
+  `真實 BART + Caltrain GTFS 路線幾何與時刻表 · 地下深度為近似估算`;
 
 // ---------- tooltip / raycast ----------
 const ray = new THREE.Raycaster();
@@ -320,28 +330,41 @@ addEventListener('pointermove', (e) => {
 });
 
 // ---------- loop ----------
-const REAL_SPEED = 0.013; // km/s ≈ 47 km/h average BART/Caltrain speed (higher than a subway — longer interstations)
+const VCLOCK_RATE = 40; // virtual seconds of schedule per real second, per ×1 of speedMult (×80 default ≈ a full day every ~12 min)
+const clockEl = document.getElementById('clock');
+const AXIS_Z = new THREE.Vector3(0, 0, 1);
 const clock = new THREE.Clock();
+function fmtClock(t) {
+  const h = Math.floor(t / 3600) % 24, m = Math.floor((t % 3600) / 60);
+  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+}
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.1);
+  vClock = (vClock + dt * speedMult * VCLOCK_RATE) % DAY_SPAN;
+  if (clockEl) clockEl.textContent = fmtClock(vClock) + ' 模擬時鐘 sim time';
+  let active = 0;
   for (let i = 0; i < trains.length; i++) {
     const tr = trains[i];
-    if (!routeGroup[tr.c.routeId].visible) {
+    const br = routeGroup[tr.routeId].visible ? bracket(tr.stops, vClock) : null;
+    if (!br) {
       _m.compose(_zero, _q, _s.set(0, 0, 0));
       trMesh.setMatrixAt(i, _m);
       continue;
     }
-    tr.t += tr.dir * (REAL_SPEED * speedMult * dt) / tr.c.len;
-    if (tr.t > 1) { tr.t = 1; tr.dir = -1; }
-    if (tr.t < 0) { tr.t = 0; tr.dir = 1; }
-    tr.c.curve.getPointAt(tr.t, _p);
-    tr.c.curve.getTangentAt(tr.t, _tan);
-    _q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), _tan);
-    _m.compose(_p, _q, _s.set(1, 1, 1));
+    active++;
+    const [a, b] = br, [ua, ta] = tr.stops[a], [ub, tb] = tr.stops[b];
+    const frac = tb > ta ? (vClock - ta) / (tb - ta) : 0;
+    const u = Math.max(0, Math.min(1, ua + (ub - ua) * frac));
+    tr.curve.getPointAt(u, _p);
+    tr.curve.getTangentAt(u, _tan);
+    if (ub < ua) _tan.negate();   // u decreases along this trip's direction of travel — face the way it's actually moving
+    _q.setFromUnitVectors(AXIS_Z, _tan);
+    _m.compose(_p, _q, _s);
     trMesh.setMatrixAt(i, _m);
   }
   trMesh.instanceMatrix.needsUpdate = true;
+  if (statsExtra) statsExtra.textContent = active + ' trains in service now 目前實際運行';
   controls.update();
   composer.render();
 }
