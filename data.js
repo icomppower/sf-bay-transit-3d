@@ -44,6 +44,9 @@ window.BATTLE_DATA = (function () {
     },
   };
   const ui = { sceneLabel: false,
+    // no autoplay tour on this map (app.js boots straight into free-look) — the hint reflects that
+    hint: { autoplay: "自由環視 Free-look",
+            drag: "拖曳環視 · 點擊車站看下班車<br>Drag to look around · click a station for departures" },
     disclaimer: "Imagery © Esri, Maxar, Earthstar Geographics · elevation SRTM courtesy USGS" };
 
   const flagLegend = Object.keys(LINE_FAC).map(code => ({ flag: code, zh: LINE_FAC[code][0], en: LINE_FAC[code][0], faction: code }));

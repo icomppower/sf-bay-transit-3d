@@ -190,7 +190,13 @@ function injectBattleStyles(){
     const kickMusic = wireUI(); applyWeather(D.storyboard[0].day);   // wireUI returns syncMusic → starts the muted, in-sync soundtrack timeline once the tour begins
     initRouteUI();   // pinned-route commuter card (restores a saved Origin→Destination from localStorage)
     bootMsg(D.ui.boot.music); await awaitAudio();   // mp3 buffered before the tour begins
-    Director.start(); updatePlayBtn(); kickMusic();   // start the MUTED, in-sync soundtrack timeline (muted autoplay is gesture-exempt; silent). Audible sound requires a deliberate music-button click.
+    // fork-only: NO autoplay tour — a live transit map opens straight into free-look. Director.start()
+    // still sets the clock, the overview framing, and the welcome card; the camera is then handed to
+    // OrbitControls permanently (userFree), and the tour transport bar is dropped as dead chrome.
+    Director.start(); Director.userFree = true; Director.playing = false;
+    const bar = document.getElementById("controls"); if(bar) bar.style.display = "none";
+    setTimeout(()=>document.getElementById("caption").classList.remove("show"), 7000);   // welcome card fades; the top-left hint keeps the controls guidance
+    updatePlayBtn(); kickMusic();
     bootMsg(D.ui.boot.starting); renderScene(); animate();
     if(window.__capture){ for(let k=0;k<60;k++) frame(1/30); renderScene(); captureFrozen=true; }   // capture mode: settle on the first shot and hold (the headless driver then seeks/steps deterministically)
     setTimeout(()=>{ const b=document.getElementById("boot"); if(b) b.classList.add("gone"); }, 600);
