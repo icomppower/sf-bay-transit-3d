@@ -8,12 +8,14 @@ its own license, reproduced or referenced below.
 ## 1. cinematic-3d-battle-engine: bundled software
 
 Files: `config.js`, `validate.js`, `app.js`, `core.js`, `projection.js`, `state.js`,
-`terrain.js`, `entities.js`, `director.js`, `fx.js` (the engine modules, used
-**unmodified** per the fork contract).
+`terrain.js`, `entities.js`, `director.js`, `fx.js` (the engine modules; this fork
+modifies several of them — schedule-driven/ambient trains, the station popup, and a
+station-click callback in `entities.js`/`terrain.js`, plus a free-look boot in `app.js`).
 
 The engine is © **Keith Li** — https://github.com/keithligh/cinematic-3d-battle-engine —
-licensed **MIT**. The battle layer of this fork (`data.js`, `flags.js`, `index.html`,
-`lib/tiles/`) is this project's own work.
+licensed **MIT**. The transit layer of this fork (`data.js`, `flags.js`, `index.html`,
+`route-logic.js`, `route-ui.js`, `lib/tiles/`) is this project's own work, by
+Johnny Lai (icomppower).
 
 ---
 
