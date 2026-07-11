@@ -233,7 +233,12 @@ export function showStationPopup(p, si, clientX, clientY){
         `<span>${f?f.name_en:r.r}</span><span style="margin-left:auto;color:#aebdde">${fmt(r.t)}</span></div>`; }).join("")
     : `<div style="margin-top:3px;color:#8b9bc0">No more scheduled departures today.</div>`;
   popup.innerHTML=`<div style="font-weight:700;margin-bottom:4px">${p.name_en||p.name_zh}</div>`+
-    `<div style="font-size:10px;color:#8b9bc0">Next departures (real weekday schedule) · now ${fmt(now)} PT</div>`+rowHtml;
+    `<div style="font-size:10px;color:#8b9bc0">Next departures (real weekday schedule) · now ${fmt(now)} PT</div>`+rowHtml+
+    // route-aware pins: feed this station into the pinned-route card (route-ui.js listens; styled there too)
+    `<div style="display:flex;gap:6px;margin-top:8px">`+
+    `<button class="pinbtn" data-role="o">From here ▸</button><button class="pinbtn" data-role="d">▸ To here</button></div>`;
+  popup.querySelectorAll(".pinbtn").forEach(b=>b.onclick=()=>{ popup.style.display="none";
+    document.dispatchEvent(new CustomEvent("route-pin",{detail:{si, role:b.dataset.role}})); });
   popup.style.left=Math.min(clientX+10, innerWidth-260)+"px";
   popup.style.top=Math.min(clientY+10, innerHeight-200)+"px";
   popup.style.display="block";

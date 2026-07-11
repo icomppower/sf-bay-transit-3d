@@ -29,6 +29,16 @@ v1 (the schematic black-background build, real geometry but no terrain) is archi
 
 Clicking a station (`terrain.js`'s `buildLabels()` now takes an optional click callback) opens a small popup listing that station's next real departures, built from the same schedule data, pre-indexed by station in `buildLiveTrains()`.
 
+## The "BART Runner" pinned-route card
+
+A glanceable, text-first commuter overlay on top of the 3D canvas — for the "looking at your phone running down the escalator" case, not just visualization. Pin an Origin → Destination (via the ▸ ROUTE card's dropdowns, or a station popup's **From here / To here** buttons) and the card shows, ticking every second:
+
+- the next real departures that actually serve that journey — trip-level filtering, so of Red/Yellow/Blue through Balboa Park only the lines that really reach 12th St show, and a Caltrain limited that skips your stop never appears (this also makes it time-aware: late evening, Balboa → 12th St correctly offers only Yellow);
+- a **down-to-the-second countdown** per departure, colour-coded green (>5 min) / amber (2–5) / flashing red (<2 — "you need to run");
+- a **one-transfer suggestion** when no direct line exists (Berkeley → San Jose via Millbrae, BART → fare gates → Caltrain) or when transferring genuinely beats waiting for the direct train by a minute or more.
+
+The pinned route persists in `localStorage`, so a commuter's card is already loaded on open — no panning or zooming needed. Split: `route-logic.js` is pure reasoning (line filtering, trip search, co-located-station grouping — Millbrae is one BART point + one Caltrain point ~30 m apart — transfer valuation, countdown bands) with no DOM and no engine imports, designed so live ETAs (BART `etd`, 511 StopMonitoring via the deployed proxy) can later replace schedule times without touching it; `route-ui.js` owns the DOM card.
+
 ## Backlog
 
 - Muni Metro / SF Muni light rail as a 4th layer (also on 511.org).

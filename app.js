@@ -18,6 +18,7 @@ import { loadTiles, buildTerrain, buildLabels, buildLine, updateLines, updateFro
 import { buildUnit, buildArrow, buildRain, buildLiveTrains, buildAmbientTrains, updateUnits, updateArrows, updateFlags,
          updateEffects, updateLiveTrains, updateAmbientTrains, showStationPopup, applyWeather, stepRain, unitObjs, arrowObjs } from "./entities.js";
 import { Director, wireUI, buildChrome, updatePlayBtn } from "./director.js";
+import { initRouteUI } from "./route-ui.js";   // fork-only: the "BART Runner" pinned-route commuter overlay
 
 /* ===================== ANIMATION LOOP ============================= */
 let last=performance.now();
@@ -187,6 +188,7 @@ function injectBattleStyles(){
     D.units.forEach(buildUnit); D.arrows.forEach(buildArrow);
     unitObjs.forEach(o=>{ unitById[o.u.id]=o; });
     const kickMusic = wireUI(); applyWeather(D.storyboard[0].day);   // wireUI returns syncMusic → starts the muted, in-sync soundtrack timeline once the tour begins
+    initRouteUI();   // pinned-route commuter card (restores a saved Origin→Destination from localStorage)
     bootMsg(D.ui.boot.music); await awaitAudio();   // mp3 buffered before the tour begins
     Director.start(); updatePlayBtn(); kickMusic();   // start the MUTED, in-sync soundtrack timeline (muted autoplay is gesture-exempt; silent). Audible sound requires a deliberate music-button click.
     bootMsg(D.ui.boot.starting); renderScene(); animate();
